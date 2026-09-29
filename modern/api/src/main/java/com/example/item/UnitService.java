@@ -13,15 +13,17 @@ public class UnitService {
     private static final Logger log = LoggerFactory.getLogger(UnitService.class);
 
     private final UnitRepository unitRepository;
+    private final ItemRepository itemRepository;
 
-    public UnitService(UnitRepository unitRepository) {
+    public UnitService(UnitRepository unitRepository, ItemRepository itemRepository) {
         this.unitRepository = unitRepository;
+        this.itemRepository = itemRepository;
     }
 
-    /** 단원 목록 — 학년, 코드 순. */
+    /** 단원 목록 — 학년, 코드 순. 단원별 공개(status='A') 문항 수(BR-24)를 함께 담는다. */
     public List<UnitResponse> listUnits() {
         List<UnitResponse> units = unitRepository.findAllByOrderByGradeAscCodeAsc().stream()
-            .map(UnitResponse::from)
+            .map(unit -> UnitResponse.from(unit, itemRepository.countByUnitIdAndStatus(unit.getId(), ItemStatus.ACTIVE)))
             .toList();
         log.debug("listed {} units", units.size());
         return units;
