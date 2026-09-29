@@ -81,7 +81,7 @@ HTML 응답이든 JSON 응답이든 아래 한 모양으로 바꾼 뒤 비교한
 }
 ```
 
-- **HTML**: `<table id="items">` 는 열 순서 고정(`id, title, unit, level, tags`, `tags` 는 쉼표로 나눔). 그 밖의 `<table id="...">` 는 머리글(`<th>`)을 영문 소문자 필드명으로 옮긴다(`단원 코드` → `code`, `학년` → `grade` …, 대응표는 `lib/normalize.mjs` 의 `HEADER_MAP`). 건수는 `<p id="count">`, 안내 문구는 `<p id="message">`.
+- **HTML**: `<table id="items">` 는 열 순서 고정(`id, title, unit, level, tags`, `tags` 는 쉼표로 나눔). 그 밖의 `<table id="...">` 는 머리글(`<th>`)을 영문 소문자 필드명으로 옮긴다(`단원 코드` → `code`, `학년` → `grade` …, 대응표는 `lib/normalize.mjs` 의 `HEADER_MAP`). 건수는 `<p id="count">`. 안내 문구(`message`)는 `<ul id="warnings">` 의 각 `<li>` 와 `<p id="message">` 를 순서대로(경고 먼저) 줄바꿈(`\n`)으로 이어붙인다 — 둘 다 없으면 `null`.
 - **JSON**: `{ items, count, message }` 를 그대로 옮긴다. 배열이 오면 `rows` 로 본다.
 - **실행마다 바뀌는 값 제거**: 시각 · 세션 · 토큰 · 요청 ID. HTML 은 표 · 건수 · 안내 문구만 뽑으므로 `<footer>` 의 시각 · 세션은 애초에 들어오지 않는다. JSON 은 `timestamp`, `generatedAt`, `requestId`, `sessionId`, `token` 등(`VOLATILE_KEYS`)을 지운다.
 - **순서 유지**: `rows` 의 순서, `tags` 의 순서를 바꾸지 않는다. 정렬도 동작의 일부다.

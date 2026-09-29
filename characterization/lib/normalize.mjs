@@ -5,7 +5,9 @@
 //
 // - HTML: <table id="items"> 는 고정 열(id, title, unit, level, tags) 로 읽는다.
 //         그 밖의 <table id="..."> 는 머리글(<th>)을 영문 소문자 필드명으로 옮겨 읽는다.
-//         건수는 <p id="count">, 안내 문구는 <p id="message"> 에서 뽑는다.
+//         건수는 <p id="count"> 에서 뽑는다.
+//         안내 문구(message)는 <ul id="warnings"> 의 각 <li> 와 <p id="message"> 를 순서대로
+//         줄바꿈(\n)으로 이어붙인다(둘 다 없으면 null). 필드 이름을 늘리지 않고 기존 4개 모양을 지킨다.
 // - JSON: { items, count, message } 를 그대로 쓴다. 배열이 오면 rows 로 본다.
 // - 실행할 때마다 바뀌는 값(시각 · 세션 · 토큰 · 요청 ID)은 지운다.
 // - rows 의 순서는 응답 순서 그대로 둔다. tags 도 정렬하지 않는다.
@@ -172,9 +174,16 @@ export function normalizeHtml(html, status) {
   const countEl = $('#count');
   const count = countEl.length > 0 ? parseCount(text(countEl)) : rows.length;
 
+  const warningTexts = $('#warnings li')
+    .toArray()
+    .map((li) => text($(li)))
+    .filter((w) => w.length > 0);
+
   const messageEl = $('#message');
   const messageText = messageEl.length > 0 ? text(messageEl) : '';
-  const message = messageText.length > 0 ? messageText : null;
+
+  const messageParts = messageText.length > 0 ? [...warningTexts, messageText] : warningTexts;
+  const message = messageParts.length > 0 ? messageParts.join('\n') : null;
 
   return { status, rows, count, message };
 }
