@@ -30,3 +30,30 @@ export interface Item {
   status: ItemStatus;
   tags: string[];
 }
+
+/** GET /api/items/search 의 행 — com.example.item.ItemSearchItem 과 1:1 (stem · status 없음). */
+export interface ItemSearchRow {
+  id: number;
+  title: string;
+  unit: string;
+  level: Level;
+  tags: string[];
+}
+
+/** GET /api/items/search 의 응답. message 는 검증 경고 또는 0건 안내(없으면 null). */
+export interface ItemSearchResult {
+  items: ItemSearchRow[];
+  count: number;
+  message: string | null;
+}
+
+/** 검색 조건. 서버가 레거시식으로 검증하므로 값은 모두 문자열 그대로 보낸다. */
+export interface ItemSearchParams {
+  q: string;
+  unit: string;
+  level: string;
+  tag: string;
+  sort: string;
+  dir: string;
+  page: string;
+}

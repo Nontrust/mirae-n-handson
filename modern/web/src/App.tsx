@@ -1,5 +1,6 @@
 import { API_BASE } from './api/client';
 import { ItemBrowser } from './components/ItemBrowser';
+import { ItemSearch } from './components/ItemSearch';
 
 export function App() {
   return (
@@ -12,6 +13,7 @@ export function App() {
       </header>
       <main>
         <ItemBrowser />
+        <ItemSearch />
       </main>
     </div>
   );
