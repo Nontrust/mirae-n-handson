@@ -31,8 +31,7 @@ class UnitServiceTest {
         Unit m51 = ItemFixtures.unit(1, "M5-1", "분수의 덧셈과 뺄셈", 5);
         Unit m61 = ItemFixtures.unit(4, "M6-1", "분수의 나눗셈", 6);
         when(unitRepository.findAllByOrderByGradeAscCodeAsc()).thenReturn(List.of(m51, m61));
-        when(itemRepository.countByUnitIdAndStatus(1, ItemStatus.ACTIVE)).thenReturn(3L);
-        when(itemRepository.countByUnitIdAndStatus(4, ItemStatus.ACTIVE)).thenReturn(0L);
+        when(itemRepository.countGroupedByUnitId(ItemStatus.ACTIVE)).thenReturn(List.<Object[]>of(new Object[] {1, 3L}));
 
         List<UnitResponse> units = unitService.listUnits();
 

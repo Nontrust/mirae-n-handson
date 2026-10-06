@@ -24,4 +24,8 @@ public interface ItemRepository extends JpaRepository<Item, Integer>, JpaSpecifi
     List<Item> findByUnitCodeAndStatus(@Param("unitCode") String unitCode, @Param("status") String status);
 
     long countByUnitIdAndStatus(Integer unitId, String status);
+
+    /** 단원별 문항 수를 한 번에 센다. 각 행은 {@code [unitId, count]} 이고 문항이 없는 단원은 나오지 않는다. */
+    @Query("select i.unit.id, count(i) from Item i where i.status = :status group by i.unit.id")
+    List<Object[]> countGroupedByUnitId(@Param("status") String status);
 }

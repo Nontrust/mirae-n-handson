@@ -213,6 +213,7 @@ public class ItemSearchService {
             long value = Long.parseLong(digits);
             return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) value;
         } catch (NumberFormatException e) {
+            log.debug("page number out of long range, clamped to Integer.MAX_VALUE");
             return Integer.MAX_VALUE;
         }
     }
@@ -226,6 +227,7 @@ public class ItemSearchService {
         try {
             return Integer.parseInt(matcher.group());
         } catch (NumberFormatException e) {
+            log.debug("integer out of int range, clamped like PHP cast");
             return matcher.group().startsWith("-") ? Integer.MIN_VALUE : Integer.MAX_VALUE;
         }
     }

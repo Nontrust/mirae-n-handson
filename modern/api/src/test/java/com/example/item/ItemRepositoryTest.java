@@ -74,6 +74,14 @@ class ItemRepositoryTest {
     }
 
     @Test
+    @DisplayName("countGroupedByUnitId: 단원별 공개 문항 수를 한 번에 센다")
+    void countGroupedByUnitIdCountsActiveOnly() {
+        Object[] row = itemRepository.countGroupedByUnitId(ItemStatus.ACTIVE).stream()
+            .filter(r -> r[0].equals(fraction.getId())).findFirst().orElseThrow();
+        assertThat(row[1]).isEqualTo(3L);
+    }
+
+    @Test
     @DisplayName("countByUnitIdAndStatus: 상태별 문항 수")
     void countsByStatus() {
         assertThat(itemRepository.countByUnitIdAndStatus(fraction.getId(), ItemStatus.ACTIVE)).isEqualTo(3);
