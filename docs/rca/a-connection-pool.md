@@ -106,6 +106,49 @@
 - slow log가 3건뿐이라 임계값(`long_query_time`) 설정을 알아야 누락 여부를 판단할 수 있다. 확인 필요.
 - 로그에 `STU-…` 학생 식별자와 Authorization 토큰이 있다. 이후 단계에서 문서에 인용할 때는 마스킹한다.
 
+## 2. 타임라인
+
+범위: 14:07~15:02 KST. 출처는 `incident-logs/a-connection-pool/` 기준 `파일:줄번호`다. API-1·API-2는 nginx upstream 2대의 별칭이다. `app.log`는 호스트 표기가 없으나 slow log 접속원이 API-1뿐이라 API-1 로그로 본다(가정).
+
+| 시각 | 출처 | 사건 | 원문 발췌 |
+|---|---|---|---|
+| 14:07~14:37 | `nginx-access.log:17405~` | 평소: 총 44.9건/분, 리포트 0.17건/분 | (집계) |
+| 14:33:45 | `app.log:1229` | 평소 409 WARN(이상 아님) | `state conflict: 마감된 과제는 재배포할 수 없습니다: distributionId=2` |
+| 14:37:42 | `mariadb-slow.log:15-20` | 느린 쿼리 시작(9.8초, 128만 행). 헤더 UTC 5:37:52 | `Query_time: 9.812417 … Rows_examined: 1284310` |
+| 14:37:52.199 | `app.log:1243` | 첫 커넥션 누수 경고(리포트 호출 스택) | `Connection leak detection triggered … on thread http-nio-8080-exec-6` |
+| 14:38:01 | `app.log:1258-1259`, `nginx-access.log:18801` | 첫 리포트 완료·커넥션 반납(점유 약 19.7초) (선후 불확실) | `built class report for class 3: 3 distributions, 10 submissions` |
+| 14:38~14:40 | `app.log:1261~1521` | 누수 경고 반복(14:38 2건, 14:39 3건). 리포트 요청 분당 3→10건 | `Connection leak detection triggered … on thread http-nio-8080-exec-3` |
+| 14:40:52.319 | `app.log:1522` | **첫 풀 고갈 ERROR**. 이후 14:49:51까지 36+13건 | `Connection is not available, request timed out after 3000ms (total=5, active=5` |
+| 14:40:52 | `app.log:1523`, `nginx-access.log:18918` | 첫 500(`/api/units/M6-2/items`) | `unhandled exception on /api/units/M6-2/items` |
+| 14:41:06 | `nginx-error.log:6`, `nginx-access.log:18933` | 첫 504(리포트). 이후 55건 | `upstream timed out (110: Connection timed out) while reading response header` |
+| 14:42:01 | `nginx-error.log:10` | API-1 임시 제외 첫 건. 이후 26건 | `upstream server temporarily disabled while reading response header from upstream` |
+| 14:42:01 | `nginx-error.log:11`, `nginx-access.log:18970` | API-2 연결 거부 첫 건과 첫 502. API-2 거부 14건 (선후 불확실) | `connect() failed (111: Connection refused) while connecting to upstream` |
+| 14:42:04 | `nginx-error.log:12` | `no live upstreams` 첫 건. 이후 68건(502의 나머지) | `no live upstreams while connecting to upstream` |
+| 14:43~14:49 | `app.log:1690~4981` | 정점: app WARN/ERROR 14:43 44건, 5xx 14:45 27건, nginx-error 14:46 25건 | (집계) |
+| 14:49:51 | `app.log:4980-4981` | 마지막 풀 고갈 ERROR | `Connection is not available, request timed out after 3000ms` |
+| 14:50:52 | `nginx-error.log:158-159` | 마지막 API-1 제외 · API-2 거부 | `connect() failed (111: Connection refused)` |
+| 14:51:02 | `nginx-error.log:166` | 마지막 `no live upstreams` | `no live upstreams while connecting to upstream` |
+| 14:51:37~49 | `app.log:5251`, `app.log:5267` | 마지막 누수 경고, 마지막 반납 | `Previously reported leaked connection … was returned to the pool` |
+| 14:51:47 | `nginx-error.log:168`, `nginx-access.log:19381` | 마지막 504, 마지막 5xx | `upstream timed out (110: Connection timed out)` |
+| 14:52:09 | `app.log:5269` | 평소 409 WARN만 남음 | `state conflict: 마감된 과제는 재배포할 수 없습니다: distributionId=4` |
+
+14:37:42~14:37:52 사이의 slow log와 첫 누수 경고는 시각 차이가 10초 이내이고 둘 사이를 잇는 요청 ID가 없다.
+
+## 3. 가설과 검증
+
+| # | 가설 | 지지 근거 | 반증 조건 | 확인 방법 · 결과 | 판정 |
+|---|---|---|---|---|---|
+| H1 | (코드) 리포트 트랜잭션이 커넥션을 오래 쥐어 풀이 고갈됐다 | `app.log:1243-1259`, `ReportService.java:41,69-71` | 누수 경고 스택에 리포트 호출이 없거나 점유가 10초 미만이다 | 누수 스택 134건 중 `classReport` 포함 134건. 점유 15.5~21.5초(중앙값 18.9) | **유지** |
+| H2 | (DB) 느린 쿼리·인덱스 부재가 점유 시간을 늘렸다 | `mariadb-slow.log:15-20` | 장애 구간에 느린 쿼리가 다수가 아니다 | 구간 내 slow log 1건(9.8초). 점유 134건(15~21초)을 설명하지 못함 | **주원인은 기각**, 14:37:42 건은 트리거 여부 판단 불가 |
+| H3 | (트래픽) 전체 요청 급증이다 | 14:38 이후 5xx 증가 | 분당 총 요청이 평소와 같다 | 총 요청 평소 44.9 vs 장애 43.1/분, 비리포트 44.7 vs 32.4/분 | **기각**. 리포트만 0.17→10.69/분(약 63배) |
+| H4 | (배포·설정) 재기동이나 설정 변경이 있었다 | 없음 | 장애 직전 시작·설정 로드 로그가 없다 | `app.log` 시작·설정 로드 줄 0건. 배포 이력 파일 없음 | **판단 불가(로그 부족)** |
+| H5 | (인프라) API-2 단독 장애가 부하를 API-1로 몰았다 | `nginx-error.log:11` | API-2 거부가 API-1 포화보다 늦게 시작한다 | 첫 거부 14:42:01 > 포화 14:40:52 > 첫 누수 14:37:52 | 트리거로는 **기각**, 502 증폭 요인으로 유지. 거부 이유는 판단 불가 |
+
+### 판정
+
+채택: **H1**. 코드가 지지한다(`ReportService.java:41` `@Transactional`, `69-71` TODO와 `sign` 호출. `application.yml:14-15` 풀 5개·대기 3초). 확신 수준은 **중간~높음**이다. 풀 고갈 경로는 로그와 코드로 확인했지만, 점유 15~21초의 구성은 확정하지 못했다.
+기각: H2(주원인), H3, H5(트리거). 판단 불가: H4. 분석 중 새로 확인된 사실은 502의 정체다. 502 82건은 API-2 연결 거부 14건과 `no live upstreams` 68건이다(앱 오류가 아니라 nginx 단계의 실패).
+
 ## 4. 원인
 
 **직접 원인** (인과 순서)
@@ -114,13 +157,15 @@
 2. `buildClassReport`는 `@Transactional` 하나로 DB 조회부터 서명(`sign`, SHA-256 20만 회)까지 감싼다. DB 작업이 끝나도 서명이 끝날 때까지 커넥션을 반납하지 않는다.
 3. 리포트 134건이 모두 `leak-detection-threshold`(10초)를 넘겨 점유했다. 점유 시간은 15.5~21.5초, 중앙값 18.9초다.
 4. 분당 10~16건 × 약 19초 ≈ 동시 3~5개(리틀의 법칙, 추정)다. 한 요청이 풀 5개 중 하나를 쥐므로 다른 요청이 섞이면 5개를 넘는다. 14:40:52에 `total=5, active=5, idle=0, waiting=4`가 처음 찍혔다.
-5. 풀이 가득 찬 뒤에는 짧은 조회(`/api/units`, `/api/items`)도 3초를 기다리다 `CannotCreateTransactionException` → 500이 됐다. 리포트는 응답이 늦어 nginx가 502/504로 끊었다.
+5. 풀이 가득 찬 뒤에는 짧은 조회(`/api/units`, `/api/items`)도 3초를 기다리다 `CannotCreateTransactionException` → 500이 됐다. 리포트는 응답이 늦어 nginx가 504로 끊었다.
+6. API-1이 timeout으로 nginx에서 임시 제외(26건)되고 API-2는 연결을 거부(14건)해 사용할 수 있는 upstream이 없어졌다(`no live upstreams` 68건). 이 14+68건이 502 82건이다.
 
 **배경 원인**
 
 - 풀이 5개, 대기 3초로 작다. 이 값은 의도된 운영 값이다(`application.yml` 주석, 변경 금지).
 - 트랜잭션 안의 긴 작업은 코드에 TODO로 남아 있었지만 해소되지 않았다.
 - 리포트 엔드포인트에 동시 실행 제한, 결과 캐시, 클라이언트 재시도 간격 제어가 없다. 느려진 요청이 재시도를 불러 부하를 더했다(추정).
+- upstream이 2대인데 API-1 포화 시 API-2가 받아 주지 못했다(연결 거부, 이유 불명). 한 대의 포화가 서비스 전체 502로 번졌다.
 - `leak-detection-threshold` 경고는 14:37:52부터 나왔지만 알림으로 이어지지 않았다.
 
 ## 5. 근거 로그 줄
@@ -140,6 +185,8 @@
 | 5 | 500 원인은 트랜잭션 시작 실패 | `app.log:1523` | `unhandled exception on /api/units/M6-2/items` / `CannotCreateTransactionException: Could not open JPA EntityManager` |
 | 5 | 리포트는 nginx가 끊음 | `nginx-error.log:6` | `14:41:06 [error] upstream timed out (110: Connection timed out) … GET /api/classes/3/report` |
 | 5 | 504 첫 건 · 마지막 건 | `nginx-access.log:18933, 19381` | `14:41:06 … 504` / `14:51:47 … 504` |
+| 6 | API-1 제외 · API-2 거부 · upstream 없음 | `nginx-error.log:10-12` | `upstream server temporarily disabled` / `connect() failed (111: Connection refused)` / `no live upstreams` |
+| 6 | 502 = 거부 14 + 없음 68 | `nginx-error.log` 집계 | `Connection refused` 14건, `no live upstreams` 68건, 502 82건 |
 | 5 | 5xx 중 리포트 92건, 나머지는 다른 API | `nginx-access.log` 집계 | report 41+17+34, 그 외 94건(`/api/units` 26, `/api/items/*`, `/api/distributions/*` 등) |
 | 복구 | 14:52 이후 평소 수준 | `app.log:5269` | `14:52:09 WARN … state conflict: 마감된 과제는…`(평소 409 WARN만 남음) |
 
@@ -183,7 +230,7 @@
 - **점유 시간 15~21초의 구성**: DB 조회 시간과 서명 시간을 나눠 볼 로그가 없다. 코드상 DB 외 작업은 서명뿐이지만, 20만 회 해시가 보통 이 정도로 오래 걸리는지는 실행해 보지 않았다. CPU 경합이나 DB 지연이 섞였을 수 있다.
 - **14:37:42의 느린 쿼리(9.8초, 128만 행)와 리포트의 관계**: 같은 시각에 시작했지만 어떤 요청이 낸 쿼리인지 연결하는 키(스레드·요청 ID)가 없다. 이 쿼리는 slow log에 한 건뿐이다.
 - **리포트 요청이 14:38에 몰린 이유**: 단말 4곳의 사용 패턴(자동 새로고침, 재시도, 수업 종료 시각)을 알 수 없다.
-- **502의 정확한 원인**: 82건인데 nginx 오류 로그에 대응 설명이 부족하다. nginx `proxy_read_timeout` 설정값도 모른다.
+- **API-2가 연결을 거부한 이유**: 14:42:01~14:50:52에 14건 거부했다. API-2의 앱 로그와 프로세스 상태가 없다. nginx `max_fails`·`fail_timeout`·`proxy_read_timeout` 설정값도 모른다.
 - **14:52에 멈춘 이유**: 트래픽 감소인지 재시작인지 로그가 없다.
 - **14:40:52 이전 풀 상태**: 풀 메트릭이 없다.
 - **`long_query_time`**: slow log 3건이 전부인지 알 수 없다.
