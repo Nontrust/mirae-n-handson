@@ -26,6 +26,9 @@ public class ItemSearchService {
 
     private static final Logger log = LoggerFactory.getLogger(ItemSearchService.class);
 
+    /** 레거시 search.php 는 전체 건수가 0이면 경고 뒤에 이 문구를 덧붙인다. */
+    private static final String NO_RESULT_MESSAGE = "검색 결과가 없습니다";
+
     private static final int PAGE_SIZE = 20;
     private static final int MAX_PAGE = 999;
     private static final int KEYWORD_MAX_LENGTH = 100;
@@ -61,6 +64,9 @@ public class ItemSearchService {
         Page<Item> result = itemRepository.findAll(spec, PageRequest.of(pageNumber - 1, PAGE_SIZE, resolvedSort));
 
         List<ItemSearchItem> items = result.getContent().stream().map(ItemSearchItem::from).toList();
+        if (result.getTotalElements() == 0) {
+            warnings.add(NO_RESULT_MESSAGE);
+        }
         String message = warnings.isEmpty() ? null : String.join("\n", warnings);
         log.debug("search returned {} of {} items", items.size(), result.getTotalElements());
         return new ItemSearchResponse(items, result.getTotalElements(), message);

@@ -71,7 +71,7 @@ class ItemSearchServiceTest {
         ItemSearchResponse result = itemSearchService.search(tooLong, null, null, null, null, null, null);
 
         assertThat(result.count()).isZero();
-        assertThat(result.message()).isEqualTo("키워드가 너무 길어 100자까지만 사용했습니다.");
+        assertThat(result.message()).isEqualTo("키워드가 너무 길어 100자까지만 사용했습니다.\n검색 결과가 없습니다");
     }
 
     @Test
@@ -98,7 +98,7 @@ class ItemSearchServiceTest {
         ItemSearchResponse result = itemSearchService.search(null, null, "10", null, null, null, null);
 
         assertThat(result.count()).isZero();
-        assertThat(result.message()).isEqualTo("난이도는 1~5 사이여야 합니다.");
+        assertThat(result.message()).isEqualTo("난이도는 1~5 사이여야 합니다.\n검색 결과가 없습니다");
     }
 
     @Test
@@ -116,7 +116,7 @@ class ItemSearchServiceTest {
         ItemSearchResponse result = itemSearchService.search(null, null, null, "없는태그", null, null, null);
 
         assertThat(result.count()).isZero();
-        assertThat(result.message()).isEqualTo("등록되지 않은 태그입니다: 없는태그");
+        assertThat(result.message()).isEqualTo("등록되지 않은 태그입니다: 없는태그\n검색 결과가 없습니다");
     }
 
     @Test
@@ -171,7 +171,7 @@ class ItemSearchServiceTest {
         ItemSearchResponse result = itemSearchService.search(null, "M9-9", null, null, null, null, null);
 
         assertThat(result.count()).isZero();
-        assertThat(result.message()).isEqualTo("등록되지 않은 단원 코드입니다: M9-9");
+        assertThat(result.message()).isEqualTo("등록되지 않은 단원 코드입니다: M9-9\n검색 결과가 없습니다");
     }
 
     @Test
@@ -186,5 +186,14 @@ class ItemSearchServiceTest {
         assertThat(row.unit()).isEqualTo("M5-1");
         assertThat(row.level()).isEqualTo(4);
         assertThat(row.tags()).containsExactly("계산", "문장제");
+    }
+
+    @Test
+    @DisplayName("BR-24: 결과가 0건이면 경고가 없어도 '검색 결과가 없습니다'를 message 에 담는다")
+    void emptyResultAddsNoResultMessage() {
+        ItemSearchResponse result = itemSearchService.search("존재하지않는키워드", null, null, null, null, null, null);
+
+        assertThat(result.count()).isZero();
+        assertThat(result.message()).isEqualTo("검색 결과가 없습니다");
     }
 }
