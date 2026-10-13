@@ -6,4 +6,4 @@ dsn = "${DB_DSN}"
 name = "execute_sql"
 source = "default"
 readonly = true
-max_rows = 1000
+max_rows = 1

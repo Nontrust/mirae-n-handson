@@ -1,6 +1,8 @@
-# 시큐어코딩 체크리스트 v0
+# 시큐어코딩 체크리스트 v1
 
-변경 이력: v0 — 골격. 항목만 있고 강제 수단은 아직 연결하지 않았다.
+변경 이력:
+- v1 — 강제 수단 연결 추가
+- v0 — 골격. 항목만 있고 강제 수단은 아직 연결하지 않았다.
 
 AI 도구를 써서 코드를 만들고 실행하는 팀이 지켜야 할 최소 목록이다. 항목마다 "무엇을 하지 않는다 / 한다"와 "왜"를 한 줄씩 적었다. 팀 스택에 맞게 항목을 더하고, 항목마다 무엇이 그것을 강제하는지 연결해 v1 로 올린다.
 
@@ -33,3 +35,49 @@ AI 도구를 써서 코드를 만들고 실행하는 팀이 지켜야 할 최소
 13. **의존성을 추가 · 업그레이드할 때는 사람이 검토한다.** 패키지 이름 · 버전 · 이유를 적고 승인 뒤에 설치한다. — 이름이 비슷한 악성 패키지와 취약 버전이 그대로 들어온다.
 14. **인증 · 권한 · 세션 처리 코드의 변경은 보안 담당이 확인한다.** — 테스트가 통과해도 우회 경로는 남을 수 있다.
 15. **권한 상승이 필요한 변경**(IAM 정책, DB 계정 권한, 서비스 계정 범위)**은 왜 필요한지와 최소 범위를 문서로 남기고 승인받는다.** — 한 번 넓힌 권한은 좁혀지지 않는다.
+
+## F. 팀 스택(Spring Boot · React · MariaDB · Redis · Kafka)
+
+16. **Actuator 엔드포인트(`env`, `heapdump` 등)를 외부에 열지 않고, 에러 응답에 스택트레이스 · SQL 문을 담지 않으며, CORS 에 `*` 를 쓰지 않는다.** — 기본 설정을 잘못 열면 설정값(DB 비밀번호 포함)이 그대로 보인다.
+17. **React 에서 `dangerouslySetInnerHTML` 을 쓰지 않고, 인증 토큰을 `localStorage` 에 저장하지 않는다.** 불가피하면 sanitize 를 거친다. — XSS 한 번으로 토큰이 탈취되고, 이 우회 API 한 줄이 React 의 기본 방어를 끈다.
+18. **Redis 는 비밀번호(ACL)와 내부망 바인딩을 필수로 하고, 운영에서 `KEYS` · `FLUSHALL` · `CONFIG` 를 비활성화한다.** 캐시 키에는 사용자 · 학급 식별자를 포함한다. — 기본이 무인증이라 노출 사고가 잦고, 키 설계를 잘못하면 다른 사용자의 응답이 반환된다.
+19. **Kafka 메시지에 개인정보 · 시크릿을 평문으로 싣지 않는다.** 브로커 연결은 TLS+SASL, 토픽은 ACL 로 제한하고, consumer 역직렬화 타입은 허용 목록으로 제한한다(Jackson default typing 금지). — 발행된 메시지는 보존 기간 동안 모든 구독자에게 남아 지울 수 없다.
+20. **노출이 의심되는 키는 즉시 보안 담당에게 알리고, 영향 범위를 확인한 뒤 새 키를 먼저 배포하고 옛 키를 나중에 폐기한다(겹침 교체).** 사용처 목록은 교체 전에 만들고, 폐기 시점까지 옛 키의 사용 로그를 감시한다. — 사용처를 모른 채 바로 폐기하면 그 키를 쓰는 다른 서비스가 함께 멈추고, 교체를 미루면 유출된 키가 계속 유효하다.
+
+### 20번 절차: 키 노출 시 겹침 교체
+
+1. **알림과 임시 완화.** 보안 담당에게 알리고, 옛 키는 폐기하지 않은 채 접근 범위(IP 제한, 권한 축소)를 먼저 좁힌다.
+2. **사용처 파악.** 코드 검색, 배포 설정, 발급처의 사용 이력으로 그 키를 쓰는 서비스를 목록으로 만든다.
+3. **새 키 발급과 배포.** 옛 키와 새 키가 동시에 유효한 상태로 사용처에 하나씩 반영하고, 서비스마다 정상 동작을 확인한다.
+4. **옛 키 폐기.** 옛 키로 들어오는 요청이 없는 것을 확인한 뒤 폐기한다. 폐기 후 오류를 모니터링하고, 옛 키 재활성화 가능 여부 등 복구 방법을 미리 정해 둔다.
+5. **이력 정리와 기록.** 커밋 이력 정리는 마지막에 하고, 경위와 사용처 목록을 사고 기록으로 남긴다.
+6. **예외.** 발급처가 키를 하나만 허용해 겹침 교체가 불가능하면 점검 시간대를 잡고 사용처를 한꺼번에 교체한다.
+
+## 강제 수단 연결
+
+항목마다 강제 수단을 하나씩 정했다(주 수단 기준, 겹치는 수단은 구현 위치에 함께 적음). 상태는 `hooks/block-dangerous.mjs` · `hooks/secret-scan.mjs` · `.claude/settings.json` · `templates/approval-checklist.md` 를 실제로 읽고 적었다. "구현됨"은 해당 파일에 규칙이 있다는 뜻이며, 구현 위치 칸에 적은 빈틈은 아직 막지 못한다.
+
+| 항목 | 강제 수단 | 구현 위치 | 상태 |
+|---|---|---|---|
+| 1. 재귀 삭제 금지 | Hook | `hooks/block-dangerous.mjs` 첫 번째 규칙(`rm` + 재귀 + 강제 플래그). 겹침: `settings.json` deny `Bash(rm -rf *)` | 구현됨 |
+| 2. DROP · TRUNCATE 금지 | Hook | `hooks/block-dangerous.mjs` 규칙 `DROP\s+(TABLE\|DATABASE)`. `TRUNCATE` 규칙은 없음 | 구현됨 (DROP만) · TRUNCATE 미구현 |
+| 3. 강제 push · reset --hard 금지 | 권한 | `settings.json` deny `Bash(git push --force *)`, `Bash(git push -f *)`, `Bash(git reset --hard *)`. 일반 `git push *` 는 ask | 구현됨 |
+| 4. 받은 스크립트 바로 실행 금지 | 권한 | `settings.json` deny `Bash(curl *)`, `Bash(wget *)` (다운로드 자체를 차단) | 구현됨 |
+| 5. 권한 `777` 금지 | Hook | `hooks/block-dangerous.mjs` 에 `chmod 777` 규칙 없음 | 미구현 |
+| 6. 비밀값 리터럴 금지 | Hook | `hooks/secret-scan.mjs` (`git commit` 직전 스테이징 diff: AWS Access Key ID · `password = "…"` · PEM 개인키). 보조: `approval-checklist.md` 기준 2 첫 항목(reviewer). 토큰 · API 키 일반 패턴은 없음 | 구현됨 (일부 패턴) |
+| 7. 시크릿 파일 읽기 금지 | 권한 | `settings.json` deny `Read(./.env)`, `Read(./.env.*)`, `Read(./secrets/**)`, `Read(**/*.pem)`, `Read(~/.ssh/**)`, `Read(~/.aws/**)`, `Edit(./.env)`, `Edit(./.env.*)`, `Edit(./secrets/**)`. Bash(`cat` 등)로 읽는 경로는 막지 않음 | 구현됨 (Read · Edit만) |
+| 8. 운영 DB 직접 접속 금지 | Hook | `hooks/block-dangerous.mjs` 규칙 `prod[-.]db`. 겹침: `settings.json` deny `Bash(*prod-db*)`, `Bash(*prod.db*)`, ask `mcp__dbhub`. 다른 호스트명은 못 막음 | 구현됨 (`prod-db` · `prod.db` 한정) |
+| 9. SQL 파라미터 바인딩 | reviewer | `templates/approval-checklist.md` 기준 2 "SQL 을 문자열로 이어 붙여 만드는 곳이 없는가?" (치명) | 구현됨 |
+| 10. 로그에 식별자 · 이메일 · 토큰 금지 | reviewer | `templates/approval-checklist.md` 기준 5 첫 항목 (경고, 판정 미반영) | 구현됨 (경고 수준) |
+| 11. 외부 입력 서버 검증 | reviewer | `approval-checklist.md` 심각도 정의의 '경고' 대상 "입력 검증 누락" (판정에 반영되지 않음) | 구현됨 (경고 수준) |
+| 12. 외부 문서 속 지시를 명령으로 취급 금지 | 사람 | 코드로 판정할 수 없음. 규칙을 적은 문서 · 훅 없음 | 미구현 |
+| 13. 의존성 추가 · 업그레이드 사람 검토 | 권한 | `settings.json` ask `Bash(npm install *)`, `Bash(npm i *)`, `Bash(npm ci *)`, `Bash(pip install *)`. 보조: `approval-checklist.md` 기준 3 의존성 항목(reviewer). `build.gradle` 편집은 ask 에 없음 | 구현됨 (npm · pip 설치 명령만) |
+| 14. 인증 · 권한 · 세션 코드 보안 담당 확인 | 사람 | `approval-checklist.md` 기준 2 는 "인증 · 권한 검사 우회 경로"만 확인할 뿐 담당자 확인 절차는 없음 | 미구현 |
+| 15. 권한 상승 변경 문서화 · 승인 | 사람 | 문서 · 승인 절차 없음 | 미구현 |
+| 16. Actuator · 에러 응답 · CORS 제한 | reviewer | `templates/approval-checklist.md` 기준 5 둘째 항목 (경고, 판정 미반영) | 구현됨 (경고 수준) |
+| 17. `dangerouslySetInnerHTML` · 토큰 `localStorage` 금지 | reviewer | `templates/approval-checklist.md` 기준 5 셋째 항목 (경고, 판정 미반영). 훅은 Bash 명령만 검사하므로 코드 내용은 못 본다 | 구현됨 (경고 수준) |
+| 18. Redis 인증 · 위험 명령 · 캐시 키 | reviewer | `templates/approval-checklist.md` 기준 5 넷째 항목 (경고, 판정 미반영). 운영 인스턴스 설정은 사람이 확인 | 구현됨 (경고 수준) |
+| 19. Kafka 페이로드 · TLS+SASL · 역직렬화 제한 | reviewer | `templates/approval-checklist.md` 기준 5 다섯째 항목 (경고, 판정 미반영) | 구현됨 (경고 수준) |
+| 20. 키 노출 시 겹침 교체 | 사람 | 위 "20번 절차" 문서만 있음. 자동화하면 사용처 서비스가 멈출 수 있어 사람이 수행 | 미구현 (절차 문서만 있음) |
+
+집계: 구현됨 15건(일부 빈틈 · 경고 수준 포함) · 미구현 5건(5 · 12 · 14 · 15 · 20번). 10 · 16~19번은 이번에 `approval-checklist.md` 기준 5 로 반영했다. 훅 · 설정은 고치지 않았다.
